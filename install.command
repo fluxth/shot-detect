@@ -11,7 +11,8 @@ if [[ -f "$SCRIPT_DIR/venv/bin/activate" ]]; then
     source "$SCRIPT_DIR/venv/bin/activate"
 fi
 
-python -m pip install -r requirements.txt
+python3 -m ensurepip
+python3 -m pip install -r requirements.txt
 exit_code=$?
 
 echo
