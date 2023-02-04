@@ -24,7 +24,16 @@ def pts_to_timestamp(pts: float, precision: float=10e1) -> str:
     m = math.floor(pts_s / 60) % 60
     h = math.floor(pts_s / 60 / 60)
 
-    return f'{h:01d}:{m:02d}:{s:02d}.{ms}'
+    return f'{h:01d}:{m:02d}:{s:02d}.{ms:02d}'
+
+def timestamp_to_pts(timestamp: str) -> float:
+    time, ms = timestamp.split('.')
+    pts = int(ms) / len(ms)
+    h, m, s = time.split(':')
+    pts += int(s)
+    pts += int(m) * 60
+    pts += int(h) * 60 * 60
+    return pts
 
 class App:
     def __init__(self):
@@ -142,17 +151,24 @@ Please run the detection function for this video first if you haven't done it.""
             with open(overlay_path, 'w') as f:
                 f.write(f"# This is an OVERLAY file for '{uri}' ({original_name_unescaped})\n")
                 f.write("# Use this file to edit the shot change detection data.\n\n")
-                f.write("# Format:\n")
-                f.write("# [action] [shot_id] [in_timestamp] -> [out_timestamp]\n\n")
+                f.write("# The format for each action is in the following line with (F: ...)\n\n")
                 f.write("# keep      - do not modify, keep this shot as-is\n")
-                f.write("# edit      - edit this shot's ID or in/out timestamp\n")
-                f.write("# add       - add a new shot, set your own ID and in/out timestamp\n")
+                f.write("#             (F: keep)\n\n")
+                f.write("# split     - insert a cut between the previous and the next shot\n")
+                f.write("#             (F: split [new_shot_id] [timecode_to_cut])\n\n")
                 f.write("# mergeup   - delete this shot, set the previous shot's out point to this shot's out point\n")
+                f.write("#             (F: mergeup)\n\n")
                 f.write("# mergedown - delete this shot, set the next shot's in point to this shot's in point\n")
+                f.write("#             (F: mergedown)\n\n")
+                f.write("# edit      - edit this shot's ID or in/out timestamp\n")
+                f.write("#             (F: edit [shot_id] [in_timestamp] -> [out_timestamp])\n\n")
+                f.write("# add       - add a new shot, set your own ID and in/out timestamp\n")
+                f.write("#             (F: add [new_shot_id] [in_timestamp] -> [out_timestamp])\n\n")
                 f.write("# delete    - delete this shot, neighboring shots won't be modified\n")
+                f.write("#             (F: delete)\n")
                 f.write("\n")
                 for shot in data['shots']:
-                    f.write(f"keep {shot['shot_id']} {shot['start_pts']:.6f} -> {shot['end_pts']:.6f}\n")
+                    f.write(f"keep {shot['shot_id']} {pts_to_timestamp(shot['start_pts'])} -> {pts_to_timestamp(shot['end_pts'])}\n")
 
         subprocess.call(['open', directory])
         print('\nEdit the OVERLAY file(s) and save it')
@@ -180,7 +196,10 @@ Please run the detection function for this video first if you haven't done it.""
                 if line[0] == '#':
                     continue
 
-                [action, shot_id, start_pts, _, end_pts] = line.split()
+                segments = line.split()
+                action = segments[0]
+                segments = segments[1:]
+                # action, shot_id, start_ts, _, end_ts = line.split()
 
                 #print(original_data['shots'][ptr]['shot_id'], shot_id)
                 #if not action == 'edit':
@@ -195,39 +214,54 @@ Please run the detection function for this video first if you haven't done it.""
                     mergedown = False
                     continue
 
-                match action:
-                    case 'keep':
-                        shots.append(original_data['shots'][ptr])
-                    case 'edit':
-                        shots.append({
-                            "shot_id": shot_id,
-                            "start_pts": float(start_pts),
-                            "end_pts": float(end_pts),
-                        })
-                    case 'add':
-                        shots.append({
-                            "shot_id": shot_id,
-                            "start_pts": float(start_pts),
-                            "end_pts": float(end_pts),
-                        })
-                        ptr -= 1
-                    case 'mergeup':
-                        if len(shots) == 0:
-                            err('Cannot mergeup to nothing!')
-                            exit(1)
-                        shots[-1]["end_pts"] = original_data['shots'][ptr]["end_pts"]
-                    case 'mergedown':
-                        try:
-                            original_data['shots'][ptr + 1]
-                            mergedown = True
-                        except IndexError:
-                            err('Cannot mergedown to nothing!')
-                            exit(1)
-                    case 'delete':
-                        pass
-                    case _:
-                        err(f"Unknown action '{action}'")
+                if action == 'keep':
+                    shots.append(original_data['shots'][ptr])
+                elif action == 'edit':
+                    shot_id, start_ts, _, end_ts = segments
+                    shots.append({
+                        "shot_id": shot_id,
+                        "start_pts": timestamp_to_pts(start_ts),
+                        "end_pts": timestamp_to_pts(end_ts),
+                    })
+                elif action == 'add':
+                    shot_id, start_ts, _, end_ts = segments
+                    shots.append({
+                        "shot_id": shot_id,
+                        "start_pts": timestamp_to_pts(start_ts),
+                        "end_pts": timestamp_to_pts(end_ts),
+                    })
+                    ptr -= 1
+                elif action == 'mergeup':
+                    if len(shots) == 0:
+                        err('Cannot mergeup to nothing!')
                         exit(1)
+                    shots[-1]["end_pts"] = original_data['shots'][ptr]["end_pts"]
+                elif action == 'mergedown':
+                    try:
+                        original_data['shots'][ptr + 1]
+                        mergedown = True
+                    except IndexError:
+                        err('Cannot mergedown to nothing!')
+                        exit(1)
+                elif action == 'delete':
+                    pass
+                elif action == 'split':
+                    if len(shots) == 0:
+                        err('Cannot split from no previous shot!')
+                        exit(1)
+
+                    shot_id, cut_ts = segments
+                    this_shot = {
+                        "shot_id": shot_id,
+                        "start_pts": timestamp_to_pts(cut_ts),
+                        "end_pts": shots[-1]["end_pts"],
+                    }
+                    shots[-1]["end_pts"] = timestamp_to_pts(cut_ts)
+                    shots.append(this_shot)
+                    ptr -= 1
+                else:
+                    err(f"Unknown action '{action}'")
+                    exit(1)
 
                 ptr += 1
 
