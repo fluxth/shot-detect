@@ -110,7 +110,6 @@ Correction function guide:
                shots, For example: between shot 10 and 20 is 15. When a shot is
                deleted or merged, shot IDs can skip from 30 to 60, this is
                totally fine and won't affect the final computation for the CSV.
-               If used with an
         - There are 3 main ways that you will most likely use while editing,
             1. Not editing a line, if the first word is `keep`, the program
                will ignore any edits to this shot. (Even if you edit the
@@ -158,7 +157,7 @@ Correction function guide:
 Generate Preview Subtitle function guide:
 - This function will generate a preview subtitle from whichever the newest data
   it has. If it has only the automatically generated shot-detection, it will
-  generated from that. In contrary, if it detects a manually corrected shots
+  generate from that. In contrary, if it detects a manually corrected shots
   from the correction function, it will use that instead.
 - When successful, this function will generate '.ass' subtitle with the names of
   `preview_builtin-stable.ass` or `preview_builtin-latest.ass` depending on what
