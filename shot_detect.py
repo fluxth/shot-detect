@@ -187,7 +187,7 @@ Please run the detection function for this video first if you haven't done it.""
             with open(overlay_path, 'r') as f:
                 lines = f.read().splitlines()
 
-            mergedown = False
+            mergedown = None
             for line in lines:
                 line_stripped = line.strip()
                 if len(line_stripped) == 0:
@@ -208,10 +208,10 @@ Please run the detection function for this video first if you haven't done it.""
                 if mergedown:
                     shots.append({
                         **original_data['shots'][ptr],
-                        "start_pts": original_data['shots'][ptr - 1]['start_pts'],
+                        "start_pts": mergedown['start_pts'],
                     })
                     ptr += 1
-                    mergedown = False
+                    mergedown = None
                     continue
 
                 if action == 'keep':
@@ -239,7 +239,7 @@ Please run the detection function for this video first if you haven't done it.""
                 elif action == 'mergedown':
                     try:
                         original_data['shots'][ptr + 1]
-                        mergedown = True
+                        mergedown = original_data['shots'][ptr]
                     except IndexError:
                         err('Cannot mergedown to nothing!')
                         exit(1)
