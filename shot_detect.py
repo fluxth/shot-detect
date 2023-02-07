@@ -28,7 +28,7 @@ def pts_to_timestamp(pts: float, precision: float=10e1) -> str:
 
 def timestamp_to_pts(timestamp: str) -> float:
     time, ms = timestamp.split('.')
-    pts = int(ms) / len(ms)
+    pts = int(ms) / (10 ** len(ms))
     h, m, s = time.split(':')
     pts += int(s)
     pts += int(m) * 60
