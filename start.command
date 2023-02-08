@@ -91,7 +91,13 @@ menu(){
             run_python preview --uri "$uri"
             ;;
         "4")
-            run_python export
+            echo -en "\033[36m\033[1m"
+            echo "EXPORT RESULT CSV"
+            echo -en "\033[0m"
+            print_uri_prompt
+            read uri
+            echo
+            run_python export --uri "$uri"
             ;;
         "5")
             echo -en "\033[36m\033[1m"
@@ -215,7 +221,7 @@ run_python(){
 
 echo
 echo -en "\033[36m\033[1m"
-echo "Welcome to shot detect v0.1.2!"
+echo "Welcome to shot detect v1.0.0!"
 echo -en "\033[0m"
 
 while [[ "$?" == "0" ]]; do

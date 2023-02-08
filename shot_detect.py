@@ -4,10 +4,13 @@ import sys, os
 import math
 import json
 import subprocess
+import codecs
 from pathlib import Path
 
 from google.cloud import videointelligence_v1 as videointelligence
 import google.auth.exceptions
+
+ANALYSIS_NUM_SLOTS = 100
 
 def err(*a, **k):
     print('\033[31m\033[1m', end='', file=sys.stderr)
@@ -188,6 +191,7 @@ Please run the detection function for this video first if you haven't done it.""
                 lines = f.read().splitlines()
 
             mergedown = None
+            clean = True
             for line in lines:
                 line_stripped = line.strip()
                 if len(line_stripped) == 0:
@@ -206,6 +210,7 @@ Please run the detection function for this video first if you haven't done it.""
                 #    assert original_data['shots'][ptr]['shot_id'] == shot_id
 
                 if mergedown:
+                    clean = False
                     shots.append({
                         **original_data['shots'][ptr],
                         "start_pts": mergedown['start_pts'],
@@ -217,6 +222,7 @@ Please run the detection function for this video first if you haven't done it.""
                 if action == 'keep':
                     shots.append(original_data['shots'][ptr])
                 elif action == 'edit':
+                    clean = False
                     shot_id, start_ts, _, end_ts = segments
                     shots.append({
                         "shot_id": shot_id,
@@ -224,6 +230,7 @@ Please run the detection function for this video first if you haven't done it.""
                         "end_pts": timestamp_to_pts(end_ts),
                     })
                 elif action == 'add':
+                    clean = False
                     shot_id, start_ts, _, end_ts = segments
                     shots.append({
                         "shot_id": shot_id,
@@ -232,6 +239,7 @@ Please run the detection function for this video first if you haven't done it.""
                     })
                     ptr -= 1
                 elif action == 'mergeup':
+                    clean = False
                     if len(shots) == 0:
                         err('Cannot mergeup to nothing!')
                         exit(1)
@@ -244,8 +252,9 @@ Please run the detection function for this video first if you haven't done it.""
                         err('Cannot mergedown to nothing!')
                         exit(1)
                 elif action == 'delete':
-                    pass
+                    clean = False
                 elif action == 'split':
+                    clean = False
                     if len(shots) == 0:
                         err('Cannot split from no previous shot!')
                         exit(1)
@@ -270,7 +279,7 @@ Please run the detection function for this video first if you haven't done it.""
                     {
                         **original_data,
                         'shots': shots,
-                        'source': 'correction',
+                        'source': 'correction' if not clean else 'original_untouched',
                     },
                     f,
                 )
@@ -278,7 +287,6 @@ Please run the detection function for this video first if you haven't done it.""
         print('Corrected file(s) was saved!')
 
     def action_preview(self, args):
-        # TODO: Generate ASS subtitles
         if args.uri is None or len(args.uri) == 0:
             err("--uri to video is required")
             exit(1)
@@ -335,9 +343,94 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         subprocess.call(['open', directory])
 
     def action_export(self, args):
-        # TODO: Export to CSV
-        err('This feature is not yet implemented!')
-        exit(1)
+        if args.uri is None or len(args.uri) == 0:
+            err("--uri to video is required")
+            exit(1)
+
+        uri = args.uri
+        folder = get_folder_name(uri)
+
+        directory = Path("./data") / Path(folder)
+        if not directory.exists():
+            err("""No shot change detection data found for this URI!
+Please run the detection function for this video first if you haven't done it.""")
+            exit(1)
+
+        files = [f for f in directory.glob('**/corrected_*.json') if f.is_file()]
+        if len(files) == 0:
+            files = [f for f in directory.glob('**/original_*.json') if f.is_file()]
+
+        print("\033[36m\033[1m", end='')
+        print("EXPORT RESULT CSV")
+        print("\033[0m", end='')
+        print(f"Shot change statistics for URI '{uri}' is being processed...\n")
+        print('The program will calculate and generate the CSV result for these entries:')
+
+        last_pts = 0
+        for file in files:
+            with open(file.as_posix(), 'r') as f:
+                data = json.load(f)
+            ty = '\033[33moriginal AI detected data'
+            if data['source'] == 'correction':
+                ty = '\033[35mmanually corrected data'
+            print("\033[32m", end='')
+            print(f"- Model \033[1m{data['model']}\033[0m\033[32m using {ty}\033[0m")
+
+            end_pts = data['shots'][-1]['end_pts']
+            if end_pts > last_pts:
+                last_pts = end_pts
+
+        print('\nHowever, in order to do the calculations correctly, you need to input the total duration of this video.')
+        print('You can use the following formats to enter the video duration:\n')
+        print('    \033[1m01:23:45.00\033[0m  [timecode, rounded seconds]')
+        print('    \033[1m01:23:45.78\033[0m  [timecode, milliseconds]')
+        print('    \033[1m648.0\033[0m        [duration, rounded seconds]')
+        print('    \033[1m648.798333\033[0m   [duration, precise seconds]')
+        print()
+        print(f'The ending timestamp of the last shot in this video is \033[36m{pts_to_timestamp(last_pts)}\033[0m')
+        print()
+        print('\033[33m\033[1mInput video duration > \033[0m', end='')
+        duration = input()
+
+        if ':' in duration:
+            duration = timestamp_to_pts(duration)
+        else:
+            duration = float(duration)
+
+        segment_duration = duration / ANALYSIS_NUM_SLOTS
+        csv = [
+            ['Filename', *(str(i + 1) for i in range(ANALYSIS_NUM_SLOTS))],
+        ]
+
+        for file in files:
+            with open(file.as_posix(), 'r') as f:
+                data = json.load(f)
+
+            slots = [0 for _ in range(ANALYSIS_NUM_SLOTS)]
+
+            current_segment = 0
+            for shot in data['shots']:
+                segment_end = (current_segment + 1) * segment_duration
+                if shot['start_pts'] > segment_end:
+                    current_segment += 1
+                    segment_end = (current_segment + 1) * segment_duration
+
+                slots[current_segment] += 1
+
+            csv.append([
+                f"\"{data['uri']} ({data['model']}; {'corrected' if data['source'] == 'correction' else 'automated'})\"",
+                *(str(slot) for slot in slots),
+            ])
+
+        csv_str = '\n'.join(','.join(line) for line in csv)
+        csv_path = directory / Path('RESULTS.csv')
+        with codecs.open(csv_path.as_posix(), 'w', 'utf-8') as f:
+            f.write(csv_str + '\n')
+
+        print('\n\033[32m\033[1mCalculations complete!\033[0m')
+        print('The results were saved to `RESULTS.csv`, you can now import this file into your spreadsheet processor.')
+
+        subprocess.call(['open', directory])
 
 def main():
     parser = argparse.ArgumentParser()
