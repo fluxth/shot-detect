@@ -28,7 +28,7 @@ Usage:
 - To start the program, double click on `start.command`
 - Select the function on the main menu, the main functions are:
     1. Detection 
-        - Use Google Cloud Video Intelligence API to detect shots changes in
+        - Use Google Cloud Video Intelligence API to detect shot changes in
           your video, this will save the detection result for other functions,
           so you only need to run this once per video.
     2. Correction
@@ -36,10 +36,11 @@ Usage:
           video needs to be ran through the detection function first.
     3. Generate Preview Subtitle
         - Uses the data from the detection stage (and if available, correction
-          stage to generate preview subtitle file (.ass) that can be loaded into
-          a video player to check the detected shot changes.
+          stage) to generate preview subtitle file (.ass) that can be loaded
+          into a video player to check the detected shot changes.
     4. Export CSV
-        - To be implemented.
+        - Calculate and export the resulting CSV files to be imported into
+          a spreadsheet processor.
     5. Change/Delete GOOGLE_APPLICATION_CREDENTIALS
         - If you happen to change the credentials JSON file, use these functions
           to update your credentials.
@@ -54,7 +55,7 @@ Usage:
         - Click `Create`
     - Upload your video files to the created bucket, there should be a web
       interface, similar to Google Drive to do this.
-    - Get the URI to paste into this program by clicking the file in the
+    - Get the URI to paste into this program by right clicking the file in the
       Google Cloud Storage file list and click `Copy gsutil URI`.
 
 Important Note:
