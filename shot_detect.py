@@ -20,6 +20,12 @@ def err(*a, **k):
 def get_folder_name(path: str) -> str:
     return path.replace('gs://', 'gs--').replace('/', '--')
 
+def get_filename(path: str) -> str:
+    filename = '.'.join(path.split('/')[-1].split('.')[:-1]).strip()[:32]
+    if len(filename) == 0:
+        filename = 'unknown'
+    return filename
+
 def pts_to_timestamp(pts: float, precision: float=10e1) -> str:
     ms = int((pts - math.floor(pts)) * precision)
     pts_s = math.floor(pts)
@@ -127,6 +133,7 @@ class App:
 
         uri = args.uri
         folder = get_folder_name(uri)
+        vid_filename = get_filename(uri)
 
         directory = Path("./data") / Path(folder)
         if not directory.exists():
@@ -139,7 +146,7 @@ Please run the detection function for this video first if you haven't done it.""
             original_name = original.stem.split('_')[1]
             original_name_unescaped = original_name.replace('-', '/')
 
-            overlay_path = directory / Path(f"OVERLAY_{original_name}.txt")
+            overlay_path = directory / Path(f"OVERLAY_{vid_filename}_{original_name}.txt")
             if overlay_path.exists() and overlay_path.is_file():
                 print(f"An OVERLAY file '{overlay_path.as_posix()}' already exists.")
                 print('\033[33m\033[1m', end='')
@@ -186,7 +193,7 @@ Please run the detection function for this video first if you haven't done it.""
             shots = []
             ptr = 0
 
-            overlay_path = directory / Path(f"OVERLAY_{original_name}.txt")
+            overlay_path = directory / Path(f"OVERLAY_{vid_filename}_{original_name}.txt")
             with open(overlay_path, 'r') as f:
                 lines = f.read().splitlines()
 
@@ -293,6 +300,7 @@ Please run the detection function for this video first if you haven't done it.""
 
         uri = args.uri
         folder = get_folder_name(uri)
+        vid_filename = get_filename(uri)
 
         directory = Path("./data") / Path(folder)
         if not directory.exists():
@@ -327,7 +335,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             with open(file.as_posix(), 'r') as f:
                 file_data = json.load(f)
 
-            sub_path = directory / Path(f"preview_{file_name}.ass")
+            sub_path = directory / Path(f"SUBTITLE_{vid_filename}_{file_name}.ass")
             with open(sub_path, 'w') as f:
                 f.write(sub_template)
                 for i, shot in enumerate(file_data['shots']):
@@ -338,7 +346,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     f.write(f"{prefix}SHOT {shot['shot_id']}\n")
                     f.write(f"{prefix}{start_ts} ▶ {end_ts}\n")
 
-            print(f"Preview subtitle successfully exported for '{sub_path}'")
+            print(f"Preview subtitle successfully exported for '{uri}' as '{sub_path.name}'")
 
         subprocess.call(['open', directory])
 
@@ -349,6 +357,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         uri = args.uri
         folder = get_folder_name(uri)
+        vid_filename = get_filename(uri)
 
         directory = Path("./data") / Path(folder)
         if not directory.exists():
@@ -363,10 +372,12 @@ Please run the detection function for this video first if you haven't done it.""
         print("\033[36m\033[1m", end='')
         print("EXPORT RESULT CSV")
         print("\033[0m", end='')
-        print(f"Shot change statistics for URI '{uri}' is being processed...\n")
-        print('The program will calculate and generate the CSV result for these entries:')
+        print(f"Shot change statistics for URI '{uri}' is being processed...")
+
+        print('\nThe program will calculate and generate the result CSV for these entries:')
 
         last_pts = 0
+        txt_buf = ''
         for file in files:
             with open(file.as_posix(), 'r') as f:
                 data = json.load(f)
@@ -380,7 +391,18 @@ Please run the detection function for this video first if you haven't done it.""
             if end_pts > last_pts:
                 last_pts = end_pts
 
-        print('\nHowever, in order to do the calculations correctly, you need to input the total duration of this video.')
+            file_name = file.stem.split('_')[1]
+            shotlist_csv = directory / Path(f'SHOTLIST_{vid_filename}_{file_name}.csv')
+            with codecs.open(shotlist_csv.as_posix(), 'w', 'utf-8') as f:
+                f.write('ShotID,ShotNumber,InTmestamp,OutTimestamp\n')
+                for i, shot in enumerate(data['shots']):
+                    f.write(f'"{shot["shot_id"]}",{i + 1},{pts_to_timestamp(shot["start_pts"])},{pts_to_timestamp(shot["end_pts"])}\n')
+
+            txt_buf += f"Successfully generated shot list CSV for {data['model']} at '{shotlist_csv.name}'\n"
+
+        print('\n' + txt_buf)
+
+        print('However, in order to do the statistics calculations correctly, you need to input the total duration of this video.')
         print('You can use the following formats to enter the video duration:\n')
         print('    \033[1m01:23:45.00\033[0m  [timecode, rounded seconds]')
         print('    \033[1m01:23:45.78\033[0m  [timecode, milliseconds]')
@@ -423,12 +445,12 @@ Please run the detection function for this video first if you haven't done it.""
             ])
 
         csv_str = '\n'.join(','.join(line) for line in csv)
-        csv_path = directory / Path('RESULTS.csv')
+        csv_path = directory / Path(f'STATISTICS_{vid_filename}.csv')
         with codecs.open(csv_path.as_posix(), 'w', 'utf-8') as f:
             f.write(csv_str + '\n')
 
         print('\n\033[32m\033[1mCalculations complete!\033[0m')
-        print('The results were saved to `RESULTS.csv`, you can now import this file into your spreadsheet processor.')
+        print(f'The results were saved to `{csv_path.name}`, you can now import this file into your spreadsheet processor.')
 
         subprocess.call(['open', directory])
 
