@@ -199,87 +199,93 @@ Please run the detection function for this video first if you haven't done it.""
 
             mergedown = None
             clean = True
-            for line in lines:
-                line_stripped = line.strip()
-                if len(line_stripped) == 0:
-                    continue
+            for line_idx, line in enumerate(lines):
+                try:
+                    line_stripped = line.strip()
+                    if len(line_stripped) == 0:
+                        continue
 
-                if line[0] == '#':
-                    continue
+                    if line[0] == '#':
+                        continue
 
-                segments = line.split()
-                action = segments[0]
-                segments = segments[1:]
-                # action, shot_id, start_ts, _, end_ts = line.split()
+                    segments = line.split()
+                    action = segments[0]
+                    segments = segments[1:]
+                    # action, shot_id, start_ts, _, end_ts = line.split()
 
-                #print(original_data['shots'][ptr]['shot_id'], shot_id)
-                #if not action == 'edit':
-                #    assert original_data['shots'][ptr]['shot_id'] == shot_id
+                    #print(original_data['shots'][ptr]['shot_id'], shot_id)
+                    #if not action == 'edit':
+                    #    assert original_data['shots'][ptr]['shot_id'] == shot_id
 
-                if mergedown:
-                    clean = False
-                    shots.append({
-                        **original_data['shots'][ptr],
-                        "start_pts": mergedown['start_pts'],
-                    })
+                    if mergedown:
+                        clean = False
+                        shots.append({
+                            **original_data['shots'][ptr],
+                            "start_pts": mergedown['start_pts'],
+                        })
+                        ptr += 1
+                        mergedown = None
+                        continue
+
+                    if action == 'keep':
+                        shots.append(original_data['shots'][ptr])
+                    elif action == 'edit':
+                        clean = False
+                        shot_id, start_ts, _, end_ts = segments
+                        shots.append({
+                            "shot_id": shot_id,
+                            "start_pts": timestamp_to_pts(start_ts),
+                            "end_pts": timestamp_to_pts(end_ts),
+                        })
+                    elif action == 'add':
+                        clean = False
+                        shot_id, start_ts, _, end_ts = segments
+                        shots.append({
+                            "shot_id": shot_id,
+                            "start_pts": timestamp_to_pts(start_ts),
+                            "end_pts": timestamp_to_pts(end_ts),
+                        })
+                        ptr -= 1
+                    elif action == 'mergeup':
+                        clean = False
+                        if len(shots) == 0:
+                            err('Cannot mergeup to nothing!')
+                            exit(1)
+                        shots[-1]["end_pts"] = original_data['shots'][ptr]["end_pts"]
+                    elif action == 'mergedown':
+                        try:
+                            original_data['shots'][ptr + 1]
+                            mergedown = original_data['shots'][ptr]
+                        except IndexError:
+                            err('Cannot mergedown to nothing!')
+                            exit(1)
+                    elif action == 'delete':
+                        clean = False
+                    elif action == 'split':
+                        clean = False
+                        if len(shots) == 0:
+                            err('Cannot split from no previous shot!')
+                            exit(1)
+
+                        shot_id, cut_ts = segments
+                        this_shot = {
+                            "shot_id": shot_id,
+                            "start_pts": timestamp_to_pts(cut_ts),
+                            "end_pts": shots[-1]["end_pts"],
+                        }
+                        shots[-1]["end_pts"] = timestamp_to_pts(cut_ts)
+                        shots.append(this_shot)
+                        ptr -= 1
+                    else:
+                        err(f"Unknown action '{action}'")
+                        exit(1)
+
                     ptr += 1
-                    mergedown = None
-                    continue
-
-                if action == 'keep':
-                    shots.append(original_data['shots'][ptr])
-                elif action == 'edit':
-                    clean = False
-                    shot_id, start_ts, _, end_ts = segments
-                    shots.append({
-                        "shot_id": shot_id,
-                        "start_pts": timestamp_to_pts(start_ts),
-                        "end_pts": timestamp_to_pts(end_ts),
-                    })
-                elif action == 'add':
-                    clean = False
-                    shot_id, start_ts, _, end_ts = segments
-                    shots.append({
-                        "shot_id": shot_id,
-                        "start_pts": timestamp_to_pts(start_ts),
-                        "end_pts": timestamp_to_pts(end_ts),
-                    })
-                    ptr -= 1
-                elif action == 'mergeup':
-                    clean = False
-                    if len(shots) == 0:
-                        err('Cannot mergeup to nothing!')
-                        exit(1)
-                    shots[-1]["end_pts"] = original_data['shots'][ptr]["end_pts"]
-                elif action == 'mergedown':
-                    try:
-                        original_data['shots'][ptr + 1]
-                        mergedown = original_data['shots'][ptr]
-                    except IndexError:
-                        err('Cannot mergedown to nothing!')
-                        exit(1)
-                elif action == 'delete':
-                    clean = False
-                elif action == 'split':
-                    clean = False
-                    if len(shots) == 0:
-                        err('Cannot split from no previous shot!')
-                        exit(1)
-
-                    shot_id, cut_ts = segments
-                    this_shot = {
-                        "shot_id": shot_id,
-                        "start_pts": timestamp_to_pts(cut_ts),
-                        "end_pts": shots[-1]["end_pts"],
-                    }
-                    shots[-1]["end_pts"] = timestamp_to_pts(cut_ts)
-                    shots.append(this_shot)
-                    ptr -= 1
-                else:
-                    err(f"Unknown action '{action}'")
-                    exit(1)
-
-                ptr += 1
+                except Exception as e:
+                    err(f"""Failed to parse line {line_idx + 1}: `{line}`
+Please check the format of this line in file '{overlay_path.name}'.""")
+                    print()
+                    raise e
 
             with open(directory / Path(f"corrected_{original_name}.json"), 'w') as f:
                 json.dump(
