@@ -5,6 +5,7 @@ import math
 import json
 import subprocess
 import codecs
+import csv
 from pathlib import Path
 
 from google.cloud import videointelligence_v1 as videointelligence
@@ -400,9 +401,10 @@ Please run the detection function for this video first if you haven't done it.""
             file_name = file.stem.split('_')[1]
             shotlist_csv = directory / Path(f'SHOTLIST_{vid_filename}_{file_name}.csv')
             with codecs.open(shotlist_csv.as_posix(), 'w', 'utf-8') as f:
-                f.write('ShotID,ShotNumber,InTmestamp,OutTimestamp\n')
+                writer = csv.writer(f)
+                writer.writerow(('ShotID', 'ShotNumber', 'InTmestamp', 'OutTimestamp'))
                 for i, shot in enumerate(data['shots']):
-                    f.write(f'"{shot["shot_id"]}",{i + 1},{pts_to_timestamp(shot["start_pts"])},{pts_to_timestamp(shot["end_pts"])}\n')
+                    writer.writerow((shot['shot_id'], i + 1, pts_to_timestamp(shot["start_pts"]), pts_to_timestamp(shot["end_pts"])))
 
             txt_buf += f"Successfully generated shot list CSV for {data['model']} at '{shotlist_csv.name}'\n"
 
@@ -426,7 +428,7 @@ Please run the detection function for this video first if you haven't done it.""
             duration = float(duration)
 
         segment_duration = duration / ANALYSIS_NUM_SLOTS
-        csv = [
+        csv_data = [
             ['Filename', *(str(i + 1) for i in range(ANALYSIS_NUM_SLOTS))],
         ]
 
@@ -434,26 +436,29 @@ Please run the detection function for this video first if you haven't done it.""
             with open(file.as_posix(), 'r') as f:
                 data = json.load(f)
 
-            slots = [0 for _ in range(ANALYSIS_NUM_SLOTS)]
+            segments = [0 for _ in range(ANALYSIS_NUM_SLOTS)]
 
-            current_segment = 0
             for shot in data['shots']:
-                segment_end = (current_segment + 1) * segment_duration
-                if shot['start_pts'] > segment_end:
-                    current_segment += 1
-                    segment_end = (current_segment + 1) * segment_duration
+                segment_index = math.floor(shot['start_pts'] / segment_duration)
+                segments[segment_index] += 1
 
-                slots[current_segment] += 1
+            segments[0] -= 1
 
-            csv.append([
-                f"\"{data['uri']} ({data['model']}; {'corrected' if data['source'] == 'correction' else 'automated'})\"",
-                *(str(slot) for slot in slots),
+            if data['shots'][0]['start_pts'] != 0.0:
+                print("\n\033[31m", end='')
+                print("Warning: The first shot doesn't start at 0:00:00.00")
+                print("The program will still treat this as the starting shot and not count it in the statistics!")
+                print("\033[0m", end='')
+
+            csv_data.append([
+                f"{data['uri']} ({data['model']}; {'corrected' if data['source'] == 'correction' else 'automated'})",
+                *(str(segment) for segment in segments),
             ])
 
-        csv_str = '\n'.join(','.join(line) for line in csv)
         csv_path = directory / Path(f'STATISTICS_{vid_filename}.csv')
         with codecs.open(csv_path.as_posix(), 'w', 'utf-8') as f:
-            f.write(csv_str + '\n')
+            writer = csv.writer(f)
+            writer.writerows(csv_data)
 
         print('\n\033[32m\033[1mCalculations complete!\033[0m')
         print(f'The results were saved to `{csv_path.name}`, you can now import this file into your spreadsheet processor.')

@@ -221,7 +221,7 @@ run_python(){
 
 echo
 echo -en "\033[36m\033[1m"
-echo "Welcome to shot detect v1.1.1!"
+echo "Welcome to shot detect v1.1.2!"
 echo -en "\033[0m"
 
 while [[ "$?" == "0" ]]; do
